@@ -8,6 +8,7 @@ struct PatternRepeater {
 	pat: u64,
 	digits: u32,
 	repeat: u32,
+	finished: bool,
 }
 
 impl PatternRepeater {
@@ -16,14 +17,14 @@ impl PatternRepeater {
 			pat,
 			digits: pat.ilog10() + 1,
 			repeat,
+			finished: false,
 		}
 	}
 
 	fn add(&mut self) {
 		let n_pat = self.pat + 1;
 		if n_pat >= 10u64.pow(self.digits) {
-			self.repeat += 1;
-			self.pat = 10u64.pow(self.digits - 1);
+			self.finished = true;
 		} else {
 			self.pat = n_pat;
 		}
@@ -44,6 +45,10 @@ impl Iterator for PatternRepeater {
 	type Item = u64;
 
 	fn next(&mut self) -> Option<Self::Item> {
+		if self.finished {
+			return None;
+		}
+
 		let val = self.value();
 		self.add();
 		Some(val)
@@ -62,43 +67,36 @@ impl IdRange {
 		let end_digits = self.end.ilog10() + 1;
 
 		// / 2 because we need to repeat at least twice
+		let min_pat_len = (start_digits) / 2;
 		let max_pat_len = (end_digits) / 2;
-
-		eprintln!(
-			"checking range: {}-{}, max pattern length: {}",
-			self.start, self.end, max_pat_len
-		);
 
 		let mut invalid_ids = BTreeSet::new();
 
-		let pat_len = max_pat_len;
-
-		// for pat_len in 1..=max_pat_len {
-		// if the pattern will never be able
-		// to fit in the range, skip it
-		// if start_digits % pat_len != 0 && end_digits % pat_len != 0 {
-		// 	continue;
-		// }
-
-		let pat = 10u64.pow(pat_len - 1);
-		// todo we could do some optimization here
-		// to avoid checking patterns that are to low
-
-		let mut repeater = PatternRepeater::new(pat, start_digits / pat_len);
-
-		for pattern in &mut repeater {
-			if pattern > self.end {
-				break;
+		for pat_len in min_pat_len..=max_pat_len {
+			if pat_len == 0 {
+				continue;
 			}
 
-			eprintln!("patt: {pattern}");
+			let mut pat = 10u64.pow(pat_len - 1);
 
-			if pattern >= self.start {
-				eprintln!("found invalid ID: {pattern}");
-				invalid_ids.insert(pattern);
+			// in the first pat_len
+			// the pattern must be bigger then start
+			if pat_len == min_pat_len {
+				pat = self.start / 10u64.pow(pat_len);
+			}
+
+			let mut repeater = PatternRepeater::new(pat, 2);
+
+			for pattern in &mut repeater {
+				if pattern > self.end {
+					break;
+				}
+
+				if pattern >= self.start {
+					invalid_ids.insert(pattern);
+				}
 			}
 		}
-		// }
 
 		invalid_ids
 	}
@@ -117,12 +115,13 @@ fn parse_input(input: &str) -> impl Iterator<Item = IdRange> {
 fn part1() -> u64 {
 	let input = parse_input(INPUT);
 
-	input.map(|r| r.invalid_ids().len() as u64).sum()
+	input.map(|r| r.invalid_ids().iter().sum::<u64>()).sum()
 }
 
 fn main() {
 	let p1 = part1();
 	println!("Part 1: {p1}");
+	assert_eq!(p1, 19219508902);
 }
 
 /*
@@ -141,19 +140,30 @@ fn main() {
 */
 #[test]
 fn test_invalid_ids() {
-	fn new(start: u64, end: u64) -> IdRange {
-		IdRange { start, end }
+	macro_rules! check_ids {
+		($start:expr, $end:expr, [$($val:expr),*]) => {
+			{
+				let range = IdRange { start: $start, end: $end };
+				#[allow(unused_mut)]
+				let mut invalid_ids = range.invalid_ids();
+				$(
+					assert!(invalid_ids.remove(&$val), "Expected to find invalid ID: {}", $val);
+				)*
+
+				assert_eq!(invalid_ids.len(), 0);
+			}
+		};
 	}
 
-	assert_eq!(new(11, 22).invalid_ids().len(), 2);
-	assert_eq!(new(95, 115).invalid_ids().len(), 1);
-	assert_eq!(new(998, 1012).invalid_ids().len(), 1);
-	assert_eq!(new(1188511880, 1188511890).invalid_ids().len(), 1);
-	assert_eq!(new(222220, 222224).invalid_ids().len(), 1);
-	assert_eq!(new(1698522, 1698528).invalid_ids().len(), 0);
-	assert_eq!(new(446443, 446449).invalid_ids().len(), 1);
-	assert_eq!(new(38593856, 38593862).invalid_ids().len(), 1);
-	assert_eq!(new(565653, 565659).invalid_ids().len(), 0);
-	assert_eq!(new(824824821, 824824827).invalid_ids().len(), 0);
-	assert_eq!(new(2121212118, 2121212124).invalid_ids().len(), 0);
+	check_ids!(11, 22, [11, 22]);
+	check_ids!(95, 115, [99]);
+	check_ids!(998, 1012, [1010]);
+	check_ids!(1188511880, 1188511890, [1188511885]);
+	check_ids!(222220, 222224, [222222]);
+	check_ids!(1698522, 1698528, []);
+	check_ids!(446443, 446449, [446446]);
+	check_ids!(38593856, 38593862, [38593859]);
+	check_ids!(565653, 565659, []);
+	check_ids!(824824821, 824824827, []);
+	check_ids!(2121212118, 2121212124, []);
 }
