@@ -8,15 +8,17 @@ struct PatternRepeater {
 	pat: u64,
 	digits: u32,
 	repeat: u32,
+	variable_repeat: bool,
 	finished: bool,
 }
 
 impl PatternRepeater {
-	fn new(pat: u64, repeat: u32) -> Self {
+	fn new(pat: u64, repeat: u32, variable_repeat: bool) -> Self {
 		Self {
 			pat,
 			digits: pat.ilog10() + 1,
 			repeat,
+			variable_repeat,
 			finished: false,
 		}
 	}
@@ -24,7 +26,12 @@ impl PatternRepeater {
 	fn add(&mut self) {
 		let n_pat = self.pat + 1;
 		if n_pat >= 10u64.pow(self.digits) {
-			self.finished = true;
+			if self.variable_repeat {
+				self.repeat += 1;
+				self.pat = 10u64.pow(self.digits - 1);
+			} else {
+				self.finished = true;
+			}
 		} else {
 			self.pat = n_pat;
 		}
@@ -62,7 +69,7 @@ struct IdRange {
 }
 
 impl IdRange {
-	fn invalid_ids(&self) -> BTreeSet<u64> {
+	fn invalid_ids_p1(&self) -> BTreeSet<u64> {
 		let start_digits = self.start.ilog10() + 1;
 		let end_digits = self.end.ilog10() + 1;
 
@@ -85,7 +92,53 @@ impl IdRange {
 				pat = self.start / 10u64.pow(pat_len);
 			}
 
-			let mut repeater = PatternRepeater::new(pat, 2);
+			let mut repeater = PatternRepeater::new(pat, 2, false);
+
+			for pattern in &mut repeater {
+				if pattern > self.end {
+					break;
+				}
+
+				if pattern >= self.start {
+					invalid_ids.insert(pattern);
+				}
+			}
+		}
+
+		invalid_ids
+	}
+
+	fn invalid_ids_p2(&self) -> BTreeSet<u64> {
+		let start_digits = self.start.ilog10() + 1;
+		let end_digits = self.end.ilog10() + 1;
+
+		// / 2 because we need to repeat at least twice
+		let min_pat_len = (start_digits) / 2;
+		let max_pat_len = (end_digits) / 2;
+
+		let mut invalid_ids = BTreeSet::new();
+
+		for pat_len in 1..=max_pat_len {
+			// if the pattern will never be able
+			// to fit in the range, skip it
+			if start_digits % pat_len != 0 && end_digits % pat_len != 0 {
+				// todo this might not work with big number ranges
+				continue;
+			}
+
+			let mut pat = 10u64.pow(pat_len - 1);
+
+			// in the first pat_len
+			// the pattern must be bigger then start
+			if pat_len <= min_pat_len {
+				pat = self.start / 10u64.pow(start_digits - pat_len);
+			}
+
+			let mut repeater = PatternRepeater::new(
+				pat,
+				(start_digits / pat_len).max(2),
+				true,
+			);
 
 			for pattern in &mut repeater {
 				if pattern > self.end {
@@ -115,13 +168,23 @@ fn parse_input(input: &str) -> impl Iterator<Item = IdRange> {
 fn part1() -> u64 {
 	let input = parse_input(INPUT);
 
-	input.map(|r| r.invalid_ids().iter().sum::<u64>()).sum()
+	input.map(|r| r.invalid_ids_p1().iter().sum::<u64>()).sum()
+}
+
+fn part2() -> u64 {
+	let input = parse_input(INPUT);
+
+	input.map(|r| r.invalid_ids_p2().iter().sum::<u64>()).sum()
 }
 
 fn main() {
 	let p1 = part1();
 	println!("Part 1: {p1}");
 	assert_eq!(p1, 19219508902);
+
+	let p2 = part2();
+	println!("Part 2: {p2}");
+	assert_eq!(p2, 27180728081);
 }
 
 /*
@@ -139,13 +202,13 @@ fn main() {
    824824821-824824827,2121212118-2121212124
 */
 #[test]
-fn test_invalid_ids() {
+fn test_invalid_ids_p1() {
 	macro_rules! check_ids {
 		($start:expr, $end:expr, [$($val:expr),*]) => {
 			{
 				let range = IdRange { start: $start, end: $end };
 				#[allow(unused_mut)]
-				let mut invalid_ids = range.invalid_ids();
+				let mut invalid_ids = range.invalid_ids_p1();
 				$(
 					assert!(invalid_ids.remove(&$val), "Expected to find invalid ID: {}", $val);
 				)*
@@ -166,4 +229,47 @@ fn test_invalid_ids() {
 	check_ids!(565653, 565659, []);
 	check_ids!(824824821, 824824827, []);
 	check_ids!(2121212118, 2121212124, []);
+}
+
+/*
+   11-22 still has two invalid IDs, 11 and 22.
+   95-115 now has two invalid IDs, 99 and 111.
+   998-1012 now has two invalid IDs, 999 and 1010.
+   1188511880-1188511890 still has one invalid ID, 1188511885.
+   222220-222224 still has one invalid ID, 222222.
+   1698522-1698528 still contains no invalid IDs.
+   446443-446449 still has one invalid ID, 446446.
+   38593856-38593862 still has one invalid ID, 38593859.
+   565653-565659 now has one invalid ID, 565656.
+   824824821-824824827 now has one invalid ID, 824824824.
+   2121212118-2121212124 now has one invalid ID, 2121212121.
+*/
+#[test]
+fn test_invalid_ids_p2() {
+	macro_rules! check_ids {
+		($start:expr, $end:expr, [$($val:expr),*]) => {
+			{
+				let range = IdRange { start: $start, end: $end };
+				#[allow(unused_mut)]
+				let mut invalid_ids = range.invalid_ids_p2();
+				$(
+					assert!(invalid_ids.remove(&$val), "Expected to find invalid ID: {}", $val);
+				)*
+
+				assert_eq!(invalid_ids.len(), 0);
+			}
+		};
+	}
+
+	check_ids!(11, 22, [11, 22]);
+	check_ids!(95, 115, [99, 111]);
+	check_ids!(998, 1012, [999, 1010]);
+	check_ids!(1188511880, 1188511890, [1188511885]);
+	check_ids!(222220, 222224, [222222]);
+	check_ids!(1698522, 1698528, []);
+	check_ids!(446443, 446449, [446446]);
+	check_ids!(38593856, 38593862, [38593859]);
+	check_ids!(565653, 565659, [565656]);
+	check_ids!(824824821, 824824827, [824824824]);
+	check_ids!(2121212118, 2121212124, [2121212121]);
 }
