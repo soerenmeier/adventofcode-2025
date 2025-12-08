@@ -25,6 +25,7 @@ struct Map {
 	width: usize,
 	height: usize,
 	cells: Vec<Symbol>,
+	tachion_count: Vec<u64>,
 }
 
 impl Map {
@@ -32,23 +33,34 @@ impl Map {
 	fn run(&mut self) {
 		for y in 1..self.height {
 			for x in 0..self.width {
-				let up = self.cells[(y - 1) * self.width + x];
-				let curr = &mut self.cells[y * self.width + x];
+				let up_idx = (y - 1) * self.width + x;
+				let up = self.cells[up_idx];
+
+				let idx = y * self.width + x;
+				let curr = &mut self.cells[idx];
+
 				match (up, *curr) {
 					(Symbol::Start | Symbol::Tachion, Symbol::Splitter) => {
-						if let Some(left) = (x > 0)
-							.then(|| &mut self.cells[y * self.width + x - 1])
-						{
-							*left = Symbol::Tachion;
+						// at least one
+						let count = self.tachion_count[up_idx].max(1);
+
+						let left_idx = (x > 0).then(|| y * self.width + x - 1);
+						if let Some(left_idx) = left_idx {
+							self.cells[left_idx] = Symbol::Tachion;
+							self.tachion_count[left_idx] += count;
 						}
-						if let Some(right) = (x + 1 < self.width)
-							.then(|| &mut self.cells[y * self.width + x + 1])
-						{
-							*right = Symbol::Tachion;
+
+						let right_idx = (x + 1 < self.width)
+							.then(|| y * self.width + x + 1);
+						if let Some(right_idx) = right_idx {
+							self.cells[right_idx] = Symbol::Tachion;
+							self.tachion_count[right_idx] += count;
 						}
 					}
 					(Symbol::Start | Symbol::Tachion, _) => {
-						*curr = Symbol::Tachion
+						*curr = Symbol::Tachion;
+						self.tachion_count[idx] +=
+							self.tachion_count[up_idx].max(1);
 					}
 					_ => {}
 				}
@@ -73,6 +85,13 @@ impl Map {
 			})
 			.sum()
 	}
+
+	fn count_tachions(&self) -> u64 {
+		// count all tachions from the last line
+		self.tachion_count[(self.height - 1) * self.width..]
+			.iter()
+			.sum()
+	}
 }
 
 fn parse_input(input: &str) -> Map {
@@ -95,6 +114,7 @@ fn parse_input(input: &str) -> Map {
 	Map {
 		width,
 		height: cells.len() / width,
+		tachion_count: vec![0; cells.len()],
 		cells,
 	}
 }
@@ -105,8 +125,43 @@ fn part1() -> u64 {
 	map.count_splits()
 }
 
+fn part2() -> u64 {
+	let mut map = parse_input(INPUT);
+	map.run();
+	map.count_tachions()
+}
+
 fn main() {
 	let p1 = part1();
 	println!("Part 1: {p1}");
 	assert_eq!(p1, 1635);
+
+	let p2 = part2();
+	println!("Part 2: {p2}");
+	assert_eq!(p2, 58097428661390);
+}
+
+#[test]
+fn test_p2() {
+	let mut map = parse_input(
+		"\
+.......S.......
+...............
+.......^.......
+...............
+......^.^......
+...............
+.....^.^.^.....
+...............
+....^.^...^....
+...............
+...^.^...^.^...
+...............
+..^...^.....^..
+...............
+.^.^.^.^.^...^.
+...............",
+	);
+	map.run();
+	assert_eq!(map.count_tachions(), 40);
 }

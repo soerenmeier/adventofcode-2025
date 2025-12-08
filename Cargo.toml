@@ -31,4 +31,7 @@ path = "src/day6.rs"
 name = "day7"
 path = "src/day7.rs"
 
+[profile.release]
+lto = true
+
 [dependencies]
